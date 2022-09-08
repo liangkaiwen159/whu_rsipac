@@ -3,6 +3,9 @@ import torch
 import PIL
 import torchvision
 from torch.utils.data import Dataset
+from pycocotools.coco import COCO
+import numpy as np
+import cv2
 
 
 class whu_dataset(Dataset):
