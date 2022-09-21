@@ -57,7 +57,7 @@ class Seg(nn.Module):
 class Detect(nn.Module):
     stride = None
 
-    def __init__(self, nc=80, anchors=(), ch=(), inplace=True):
+    def __init__(self, nc=2, anchors=(), ch=(), inplace=True):
         super().__init__()
         self.nc = nc
         self.no = nc + 5
@@ -83,6 +83,10 @@ class Detect(nn.Module):
                     y[..., 0:2] = (y[..., 0:2] * 2. - 0.5 + self.grid[i]) * self.stride[i]
                     y[..., 2:4] = (y[..., 2:4] * 2)**2 * self.anchor_grid[i]
                 z.append(y.view(bs, -1, self.no))
+                # print(y.view(bs, -1, self.no).shape)
+                # torch.Size([16, 19200, 7])
+                # torch.Size([16, 4800, 7])
+                # torch.Size([16, 1200, 7])
         return x if self.training else (torch.cat(z, 1), x)
 
     def _make_grid(self, nx=20, ny=20, i=0):
@@ -206,8 +210,8 @@ if __name__ == '__main__':
     dets, seg = model(img)
 
     if model.training:
+        print('*' * 20, 'train', '*' * 20)
         for i, det in enumerate(dets):
-            print('*' * 20, 'train', '*' * 20)
             print('det{}:'.format(i + 1), det.shape)
     else:
         print('*' * 20, 'eval', '*' * 20)
