@@ -13,7 +13,7 @@ dataset_root_dir = '/home/xcy/dataset/chusai_crop'
 
 class Whu_dataset(Dataset):
 
-    def __init__(self, dataset_root_dir):
+    def __init__(self, dataset_root_dir, cache=True):
         super(Whu_dataset, self).__init__()
         self.dataset_root_dir = dataset_root_dir
         self.train_root_dir = os.path.join(dataset_root_dir, 'train')
@@ -25,6 +25,7 @@ class Whu_dataset(Dataset):
         self.lables_list = []
         self.out_lables = []
         self.lables = []
+        self.cache = cache
         for dirpath, dirnames, filenames in os.walk(self.imgs_path):
             for filename in filenames:
                 self.imgs_list.append(filename)
@@ -52,6 +53,10 @@ class Whu_dataset(Dataset):
             else:
                 self.out_lables.append(None)
         self.out_lables = np.array(self.out_lables, dtype=object)
+        n = len(self.imgs_list)
+        if self.cache:
+            gb = 0
+            self.img_hw0, self.img_hw = [None] * n, [None] * n
         # print(type(self.out_lables))
 
     def __len__(self):

@@ -101,7 +101,7 @@ def train(hyp, opt, device, callbacks):
         yaml.safe_dump(hyp, f, sort_keys=False)
     with open(save_dir / 'opt.yaml', 'w') as f:
         yaml.safe_dump(vars(opt), f, sort_keys=False)
-    with open(opt.data, errors='ignore') as f:
+    with open(opt.data, encoding='UTF-8', errors='ignore') as f:
         data_dict = yaml.safe_load(f)  # 加载数据集路径
     # Config
     plots = not evolve
@@ -192,7 +192,7 @@ def train(hyp, opt, device, callbacks):
     imgsz = check_img_size(opt.imgsz, gs, floor=gs * 2)  # verify imgsz is gs-multiple
 
     # DataLoader
-    whu_dataset = Whu_dataset(dataset_root_path)
+    whu_dataset = Whu_dataset(dataset_root_path, cache=True)
     train_dataset_size = int(len(whu_dataset) * data_dict['split_percent'])
     train_dataset_indexs = np.random.choice(np.arange(len(whu_dataset)), train_dataset_size, replace=False)
     val_dataset_indexs = np.setdiff1d(np.arange(len(whu_dataset)), train_dataset_indexs)
@@ -228,11 +228,17 @@ def train(hyp, opt, device, callbacks):
     compute_loss = ComputeLoss(model)
     for epoch in range(start_epoch, epochs):  # epoch-----------------------
         model.train()
-        mloss = torch.zeros(3, device=device)  # mean loss
+        mloss = torch.zeros(4, device=device)  # mean loss
         pbar = enumerate(train_loader)
         pbar = tqdm(pbar, total=nb)
         optimizer.zero_grad()
+        print(('\n' + '%10s' * 8) % ('Epoch', 'gpu_mem', 'box', 'obj', 'cls', 'seg', 'labels', 'img_size'))
         for i, (imgs, masks, lables) in pbar:  # batch
+            n_lables = 0
+            for lable in lables:
+                if lable != 0:
+                    n_lables += len(lable)
+            # continue
             ni = i + nb * epoch
             imgs = imgs.to(device)
             # Warmup
@@ -255,8 +261,8 @@ def train(hyp, opt, device, callbacks):
 
             # Forward
             with amp.autocast(enabled=cuda):
-                pred = model(imgs)[0]
-                loss, loss_items = compute_loss(pred, lables, device=device)
+                pred = model(imgs)
+                loss, loss_items = compute_loss(pred, lables, masks, device=device)
 
             # Backward
             scaler.scale(loss).backward()
@@ -273,8 +279,8 @@ def train(hyp, opt, device, callbacks):
             # Log
             mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
             mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
-            pbar.set_description(('%10s' * 2 + '%10.6f' * 3 + '   %d' * 2) %
-                                 (f'{epoch}/{epochs - 1}', mem, *mloss, len(lables), imgs.shape[-1]))
+            pbar.set_description(('%10s' * 2 + '%10.6f' * 4 + (' ' * 8 + '%d') * 2) %
+                                 (f'{epoch}/{epochs - 1}', mem, *mloss, n_lables, imgs.shape[-1]))
         # Scheduler
         lr = [x['lr'] for x in optimizer.param_groups]  # for loggers
         scheduler.step()

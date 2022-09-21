@@ -40,7 +40,7 @@ class Seg(nn.Module):
         self.conv2 = Conv(256, 64, k=1)
         self.ups3 = nn.Upsample(scale_factor=2)
         self.conv3 = Conv(128, 16, k=1)
-        self.conv4 = Conv(16, 2, k=1)
+        self.conv4 = Conv(16, 1, k=1)
 
     def forward(self, x):
         input_4 = x[0]
