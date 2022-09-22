@@ -7,8 +7,12 @@ from torch.utils.data import Dataset, DataLoader, random_split
 import numpy as np
 import cv2
 from tqdm import tqdm
+from pathlib import Path
+import glob
 # 1: uncross 2: cross
 dataset_root_dir = '/home/xcy/dataset/chusai_crop'
+IMG_FORMATS = ['bmp', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'dng', 'webp', 'mpo']  # acceptable image suffixes
+VID_FORMATS = ['mov', 'avi', 'mp4', 'mpg', 'mpeg', 'm4v', 'wmv', 'mkv']  # acceptable video suffixes
 
 
 class Whu_dataset(Dataset):
@@ -83,6 +87,81 @@ class Whu_dataset(Dataset):
         return torch.stack(img, 0), torch.stack(mask_img, 0), targets
 
 
+class LoadImages:
+    # YOLOv5 image/video dataloader, i.e. `python detect.py --source image.jpg/vid.mp4`
+    def __init__(self, path, img_size=640, stride=32, auto=True):
+        p = str(Path(path).resolve())  # os-agnostic absolute path
+        if '*' in p:
+            files = sorted(glob.glob(p, recursive=True))  # glob
+        elif os.path.isdir(p):
+            files = sorted(glob.glob(os.path.join(p, '*.*')))  # dir
+        elif os.path.isfile(p):
+            files = [p]  # files
+        else:
+            raise Exception(f'ERROR: {p} does not exist')
+
+        images = [x for x in files if x.split('.')[-1].lower() in IMG_FORMATS]
+        videos = [x for x in files if x.split('.')[-1].lower() in VID_FORMATS]
+        ni, nv = len(images), len(videos)
+
+        self.img_size = img_size
+        self.stride = stride
+        self.files = images + videos
+        self.nf = ni + nv  # number of files
+        self.video_flag = [False] * ni + [True] * nv
+        self.mode = 'image'
+        self.auto = auto
+        if any(videos):
+            self.new_video(videos[0])  # new video
+        else:
+            self.cap = None
+        assert self.nf > 0, f'No images or videos found in {p}. ' \
+                            f'Supported formats are:\nimages: {IMG_FORMATS}\nvideos: {VID_FORMATS}'
+
+    def __iter__(self):
+        self.count = 0
+        return self
+
+    def __next__(self):
+        if self.count == self.nf:
+            raise StopIteration
+        path = self.files[self.count]
+
+        if self.video_flag[self.count]:
+            # Read video
+            self.mode = 'video'
+            ret_val, img0 = self.cap.read()
+            if not ret_val:
+                self.count += 1
+                self.cap.release()
+                if self.count == self.nf:  # last video
+                    raise StopIteration
+                else:
+                    path = self.files[self.count]
+                    self.new_video(path)
+                    ret_val, img0 = self.cap.read()
+
+            self.frame += 1
+            print(f'video {self.count + 1}/{self.nf} ({self.frame}/{self.frames}) {path}: ', end='')
+
+        else:
+            # Read image
+            self.count += 1
+            img0 = cv2.imread(path)  # BGR
+            assert img0 is not None, 'Image Not Found ' + path
+            print(f'image {self.count}/{self.nf} {path}: ', end='')
+
+        # Padded resize
+        # img = letterbox(img0, self.img_size, stride=self.stride, auto=self.auto)[0]
+        img = img0
+
+        # Convert
+        img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
+        img = np.ascontiguousarray(img)
+
+        return path, img, img0, self.cap
+
+
 class Whu_sub_dataset(Whu_dataset):
 
     def __init__(self, dataset_root_dir, indexs):
@@ -109,6 +188,17 @@ class Whu_sub_dataset(Whu_dataset):
         mask_img = to_tensor(mask_img)
 
         return img, mask_img, self.out_lables[index]
+
+
+def creat_val_loader(dataset_root_path, batch_size=1, num_workers=1):
+    np.random.seed(0)
+    whu_dataset = Whu_dataset(dataset_root_path, cache=True)
+    train_dataset_size = int(len(whu_dataset) * 0.9)
+    train_dataset_indexs = np.random.choice(np.arange(len(whu_dataset)), train_dataset_size, replace=False)
+    val_dataset_indexs = np.setdiff1d(np.arange(len(whu_dataset)), train_dataset_indexs)
+    val_dataset = Whu_sub_dataset(dataset_root_path, val_dataset_indexs)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, num_workers=num_workers)
+    return val_loader
 
 
 if __name__ == '__main__':

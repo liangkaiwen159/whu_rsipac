@@ -34,6 +34,8 @@ from models.yolo import Model
 from dataset.pro_dataset import Whu_dataset, Whu_sub_dataset
 from torch.utils.data import random_split, DataLoader
 
+val_loader = []
+
 
 def parse_opt(known=False):
     parser = argparse.ArgumentParser()
@@ -229,10 +231,10 @@ def train(hyp, opt, device, callbacks):
     for epoch in range(start_epoch, epochs):  # epoch-----------------------
         model.train()
         mloss = torch.zeros(4, device=device)  # mean loss
+        print(('\n' + '%10s' * 8) % ('Epoch', 'gpu_mem', 'box', 'obj', 'cls', 'seg', 'labels', 'img_size'))
         pbar = enumerate(train_loader)
         pbar = tqdm(pbar, total=nb)
         optimizer.zero_grad()
-        print(('\n' + '%10s' * 8) % ('Epoch', 'gpu_mem', 'box', 'obj', 'cls', 'seg', 'labels', 'img_size'))
         for i, (imgs, masks, lables) in pbar:  # batch
             n_lables = 0
             for lable in lables:
