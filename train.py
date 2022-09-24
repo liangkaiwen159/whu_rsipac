@@ -9,6 +9,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from utils.loss import ComputeLoss
+from torch.utils.tensorboard import SummaryWriter
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -39,12 +40,12 @@ val_loader = []
 
 def parse_opt(known=False):
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', type=str, default=ROOT / 'yolov5l.pt', help='initial weights path')
+    parser.add_argument('--weights', type=str, default=ROOT / 'last.pt', help='initial weights path')
     parser.add_argument('--cfg', type=str, default='models/yolov5l.yaml', help='model.yaml path')
     parser.add_argument('--data', type=str, default=ROOT / 'data/whu_rsipac.yaml', help='dataset.yaml path')
     parser.add_argument('--hyp', type=str, default=ROOT / 'data/hyps/hyp.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=300)
-    parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs')
+    parser.add_argument('--batch-size', type=int, default=3, help='total batch size for all GPUs')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='train, val image size (pixels)')
     parser.add_argument('--rect', action='store_true', help='rectangular training')
     parser.add_argument('--resume', nargs='?', const=True, default=False, help='resume most recent training')
@@ -60,7 +61,7 @@ def parse_opt(known=False):
     parser.add_argument('--single-cls', action='store_true', help='train multi-class data as single-class')
     parser.add_argument('--adam', action='store_true', help='use torch.optim.Adam() optimizer')
     parser.add_argument('--sync-bn', action='store_true', help='use SyncBatchNorm, only available in DDP mode')
-    parser.add_argument('--workers', type=int, default=4, help='maximum number of dataloader workers')
+    parser.add_argument('--workers', type=int, default=12, help='maximum number of dataloader workers')
     parser.add_argument('--project', default=ROOT / 'runs/train', help='save to project/name')
     parser.add_argument('--name', default='exp', help='save to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
@@ -114,6 +115,17 @@ def train(hyp, opt, device, callbacks):
     names = ['item'] if single_cls and len(data_dict['names']) != 1 else data_dict['names']  # class names
     assert len(names) == nc, f'{len(names)} names found for nc={nc} dataset in {data}'  # check
 
+    if torch.cuda.is_available() and torch.cuda.device_count() > 1:
+        MULTI_GPU = True
+        os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+        device_ids = [x for x in range(torch.cuda.device_count())]
+        count_str = ''
+        for i in device_ids:
+            count_str += str(i)
+            count_str += ','
+        os.environ["CUDA_VISIBLE_DEVICES"] = count_str
+    else:
+        MULTI_GPU = False
     # Model
     check_suffix(weights, '.pt')  # check weights
     pretrained = weights.endswith('.pt')
@@ -121,12 +133,16 @@ def train(hyp, opt, device, callbacks):
         weights = attempt_download(weights)  # download if not found locally
         ckpt = torch.load(weights, map_location=device)  # load checkpoint
         model = Model(cfg or ckpt['model'].yaml, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+        if MULTI_GPU:
+            model = nn.DataParallel(model, device_ids=device_ids)
         exclude = ['anchor'] if (cfg or hyp.get('anchors')) and not resume else []  # exclude keys
         csd = ckpt['model'].float().state_dict()  # checkpoint state_dict as FP32
         csd = intersect_dicts(csd, model.state_dict(), exclude=exclude)  # intersect
         model.load_state_dict(csd, strict=False)  # load
     else:
         model = Model(cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
+        if MULTI_GPU:
+            model = nn.DataParallel(model, device_ids=device_ids)
 
     # Freeze
     freeze = [f'model.{x}.' for x in range(freeze)]  # layers to freeze
@@ -164,7 +180,9 @@ def train(hyp, opt, device, callbacks):
     else:
         lf = one_cycle(1, hyp['lrf'], epochs)  # cosine 1->hyp['lrf']
     scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)  # plot_lr_scheduler(optimizer, scheduler, epochs)
-
+    if MULTI_GPU:
+        optimizer = nn.DataParallel(optimizer, device_ids=device_ids)
+        scheduler = nn.DataParallel(scheduler, device_ids=device_ids)
     # ema
     ema = ModelEMA(model)
     # Resume
@@ -172,7 +190,8 @@ def train(hyp, opt, device, callbacks):
     if pretrained:
         # Optimizer
         if ckpt['optimizer'] is not None:
-            optimizer.load_state_dict(ckpt['optimizer'])
+            optimizer.module.load_state_dict(ckpt['optimizer']) if MULTI_GPU else optimizer.load_state_dict(
+                ckpt['optimizer'])
             best_fitness = ckpt['best_fitness']
 
         # EMA
@@ -189,8 +208,10 @@ def train(hyp, opt, device, callbacks):
 
         del ckpt, csd
     # Image sizes
-    gs = max(int(model.stride.max()), 32)  # grid size (max stride)
-    nl = model.model[-2].nl  # number of detection layers (used for scaling hyp['obj'])
+    gs = max(int(model.module.stride.max()), 32) if MULTI_GPU else max(int(model.stride.max()), )
+    # grid size (max stride)
+    nl = model.module.model[-2].nl if MULTI_GPU else model.model[-2].nl
+    # number of detection layers (used for scaling hyp['obj'])
     imgsz = check_img_size(opt.imgsz, gs, floor=gs * 2)  # verify imgsz is gs-multiple
 
     # DataLoader
@@ -206,7 +227,7 @@ def train(hyp, opt, device, callbacks):
                               num_workers=opt.workers,
                               collate_fn=Whu_dataset.col_fun)
     val_loader = DataLoader(val_dataset,
-                            batch_size=opt.batch_size // 2,
+                            batch_size=opt.batch_size,
                             num_workers=opt.workers,
                             collate_fn=Whu_dataset.col_fun)
     nb = len(train_loader)  # number of batches
@@ -215,10 +236,16 @@ def train(hyp, opt, device, callbacks):
     hyp['cls'] *= nc / 80. * 3. / nl
     hyp['obj'] *= (imgsz / 640)**2 * 3. / nl
     hyp['label_smoothing'] = opt.label_smoothing
-    model.nc = nc
-    model.hyp = hyp
-    model.class_weights = labels_to_class_weights_whu(train_dataset.lables, nc).to(device) * nc
-    model.names = names
+    if MULTI_GPU:
+        model.module.nc = nc
+        model.module.hyp = hyp
+        model.module.class_weights = labels_to_class_weights_whu(train_dataset.lables, nc).to(device) * nc
+        model.module.names = names
+    else:
+        model.module.nc = nc
+        model.hyp = hyp
+        model.class_weights = labels_to_class_weights_whu(train_dataset.lables, nc).to(device) * nc
+        model.names = names
     # start training
     t0 = time.time()
     nw = max(round(hyp['warmup_epochs'] * nb), 1000)  # number of warmup iterations,
@@ -228,13 +255,17 @@ def train(hyp, opt, device, callbacks):
     scaler = amp.GradScaler(enabled=cuda)
     stopper = EarlyStopping(patience=opt.patience)
     compute_loss = ComputeLoss(model)
+    with open(save_dir / 'result.txt', 'a+') as f:
+        write_line = ('%-10s' * 6) % ('Epoch', 'gpu_mem', 'box', 'obj', 'cls', 'seg') + '\n'
+        f.writelines(write_line)
+    f.close()
     for epoch in range(start_epoch, epochs):  # epoch-----------------------
         model.train()
         mloss = torch.zeros(4, device=device)  # mean loss
-        print(('\n' + '%10s' * 8) % ('Epoch', 'gpu_mem', 'box', 'obj', 'cls', 'seg', 'labels', 'img_size'))
+        print(('\n' + '%-10s' * 8) % ('Epoch', 'gpu_mem', 'box', 'obj', 'cls', 'seg', 'labels', 'img_size'))
         pbar = enumerate(train_loader)
         pbar = tqdm(pbar, total=nb)
-        optimizer.zero_grad()
+        optimizer.module.zero_grad() if MULTI_GPU else optimizer.zero_grad()
         for i, (imgs, masks, lables) in pbar:  # batch
             n_lables = 0
             for lable in lables:
@@ -247,7 +278,7 @@ def train(hyp, opt, device, callbacks):
             if ni < nw:
                 xi = [0, nw]
                 accumulate = max(1, np.interp(ni, xi, [1, nbs / batch_size]).round())
-                for j, x in enumerate(optimizer.param_groups):
+                for j, x in enumerate(optimizer.module.param_groups if MULTI_GPU else optimizer.param_groups):
                     # bias lr falls from 0.1 to lr0, all other lrs rise from 0.0 to lr0
                     x['lr'] = np.interp(ni, xi, [hyp['warmup_bias_lr'] if j == 2 else 0.0, x['initial_lr'] * lf(epoch)])
                     if 'momentum' in x:
@@ -271,21 +302,26 @@ def train(hyp, opt, device, callbacks):
 
             # Optimize
             if ni - last_opt_step >= accumulate:
-                scaler.step(optimizer)  # optimizer.step
+                scaler.step(optimizer.module if MULTI_GPU else optimizer)  # optimizer.step
                 scaler.update()
-                optimizer.zero_grad()
+                optimizer.module.zero_grad() if MULTI_GPU else optimizer.zero_grad()
                 if ema:
-                    ema.update(model)
+                    ema.update(model.module if MULTI_GPU else model)
                 last_opt_step = ni
 
             # Log
             mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
             mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
-            pbar.set_description(('%10s' * 2 + '%10.6f' * 4 + (' ' * 8 + '%d') * 2) %
+            pbar.set_description(('%-10s' * 2 + '%-10.5f' * 4 + ('%-10d') * 2) %
                                  (f'{epoch}/{epochs - 1}', mem, *mloss, n_lables, imgs.shape[-1]))
         # Scheduler
-        lr = [x['lr'] for x in optimizer.param_groups]  # for loggers
-        scheduler.step()
+        lr = [x['lr'] for x in optimizer.module.param_groups]  # for loggers
+        scheduler.module.step() if MULTI_GPU else scheduler.step()
+        with open(save_dir / 'result.txt', 'a+') as f:
+            write_line = ('%-10s' * 2 + '%-10.5f' * 4) % (f'{epoch}/{epochs - 1}', mem, *mloss) + '\n'
+            f.writelines(write_line)
+        f.close()
+
         ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'names', 'stride', 'class_weights'])
         final_epoch = (epoch + 1 == epochs) or stopper.possible_stop
         # if not noval or final_epoch:  # Calculate mAP
@@ -312,7 +348,7 @@ def train(hyp, opt, device, callbacks):
                 'model': deepcopy(de_parallel(model)).half(),
                 'ema': deepcopy(ema.ema).half(),
                 'updates': ema.updates,
-                'optimizer': optimizer.state_dict(),
+                'optimizer': optimizer.module.state_dict() if MULTI_GPU else optimizer.state_dict(),
             }
 
             # Save last, best and delete
@@ -322,26 +358,24 @@ def train(hyp, opt, device, callbacks):
             if (epoch > 0) and (opt.save_period > 0) and (epoch % opt.save_period == 0):
                 torch.save(ckpt, w / f'epoch{epoch}.pt')
             del ckpt
-        if stopper(epoch=epoch, fitness=fi):
-            break
-    for f in last, best:
-        if f.exists():
-            strip_optimizer(f)  # strip optimizers
-            # if f is best:
-            #     results, _, _ = val.run(
-            #         data_dict,
-            #         batch_size=batch_size // WORLD_SIZE * 2,
-            #         imgsz=imgsz,
-            #         model=attempt_load(f, device).half(),
-            #         iou_thres=0.65 if is_coco else 0.60,  # best pycocotools results at 0.65
-            #         single_cls=single_cls,
-            #         dataloader=val_loader,
-            #         save_dir=save_dir,
-            #         save_json=is_coco,
-            #         verbose=True,
-            #         plots=True,
-            #         callbacks=callbacks,
-            #         compute_loss=compute_loss)  # val best model with plots
+        for f in last, best:
+            if f.exists():
+                strip_optimizer(f)  # strip optimizers
+                # if f is best:
+                #     results, _, _ = val.run(
+                #         data_dict,
+                #         batch_size=batch_size // WORLD_SIZE * 2,
+                #         imgsz=imgsz,
+                #         model=attempt_load(f, device).half(),
+                #         iou_thres=0.65 if is_coco else 0.60,  # best pycocotools results at 0.65
+                #         single_cls=single_cls,
+                #         dataloader=val_loader,
+                #         save_dir=save_dir,
+                #         save_json=is_coco,
+                #         verbose=True,
+                #         plots=True,
+                #         callbacks=callbacks,
+                #         compute_loss=compute_loss)  # val best model with plots
     torch.cuda.empty_cache()
     return results
 

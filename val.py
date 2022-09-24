@@ -335,7 +335,6 @@ def parse_opt():
 
 
 def main(opt):
-    set_logging()
     check_requirements(exclude=('tensorboard', 'thop'))
 
     if opt.task in ('train', 'val', 'test'):  # run normally

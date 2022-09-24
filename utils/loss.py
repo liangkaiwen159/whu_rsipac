@@ -93,7 +93,7 @@ class ComputeLoss:
     def __init__(self, model, autobalance=False):
         self.sort_obj_iou = False
         device = next(model.parameters()).device  # get model device
-        h = model.hyp  # hyperparameters
+        h = model.module.hyp  # hyperparameters
 
         # Define criteria
         BCEcls = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([h['cls_pw']], device=device))
