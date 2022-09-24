@@ -27,6 +27,7 @@ from torch.cuda import amp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim import Adam, SGD, lr_scheduler
 from tqdm import tqdm
+from torch.utils.tensorboard import SummaryWriter
 
 from utils.general import *
 from utils.torch_utils import *
@@ -114,7 +115,6 @@ def train(hyp, opt, device, callbacks):
     nc = 1 if single_cls else int(data_dict['nc'])  # number of classes
     names = ['item'] if single_cls and len(data_dict['names']) != 1 else data_dict['names']  # class names
     assert len(names) == nc, f'{len(names)} names found for nc={nc} dataset in {data}'  # check
-
     if torch.cuda.is_available() and torch.cuda.device_count() > 1:
         MULTI_GPU = True
         os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
@@ -259,6 +259,7 @@ def train(hyp, opt, device, callbacks):
         write_line = ('%-10s' * 6) % ('Epoch', 'gpu_mem', 'box', 'obj', 'cls', 'seg') + '\n'
         f.writelines(write_line)
     f.close()
+    writter = SummaryWriter(save_dir)
     for epoch in range(start_epoch, epochs):  # epoch-----------------------
         model.train()
         mloss = torch.zeros(4, device=device)  # mean loss
@@ -317,11 +318,16 @@ def train(hyp, opt, device, callbacks):
         # Scheduler
         lr = [x['lr'] for x in optimizer.module.param_groups]  # for loggers
         scheduler.module.step() if MULTI_GPU else scheduler.step()
+
+        # Logggggg
         with open(save_dir / 'result.txt', 'a+') as f:
             write_line = ('%-10s' * 2 + '%-10.5f' * 4) % (f'{epoch}/{epochs - 1}', mem, *mloss) + '\n'
             f.writelines(write_line)
         f.close()
-
+        writter.add_scalar('lbox', mloss[0], epoch + 1)
+        writter.add_scalar('lobj', mloss[1], epoch + 1)
+        writter.add_scalar('lcls', mloss[2], epoch + 1)
+        writter.add_scalar('lseg', mloss[3], epoch + 1)
         ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'names', 'stride', 'class_weights'])
         final_epoch = (epoch + 1 == epochs) or stopper.possible_stop
         # if not noval or final_epoch:  # Calculate mAP
