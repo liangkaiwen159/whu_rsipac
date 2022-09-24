@@ -208,7 +208,7 @@ def train(hyp, opt, device, callbacks):
 
         del ckpt, csd
     # Image sizes
-    gs = max(int(model.module.stride.max()), 32) if MULTI_GPU else max(int(model.stride.max()), )
+    gs = max(int(model.module.stride.max()), 32) if MULTI_GPU else max(int(model.stride.max()), 32)
     # grid size (max stride)
     nl = model.module.model[-2].nl if MULTI_GPU else model.model[-2].nl
     # number of detection layers (used for scaling hyp['obj'])
@@ -242,7 +242,7 @@ def train(hyp, opt, device, callbacks):
         model.module.class_weights = labels_to_class_weights_whu(train_dataset.lables, nc).to(device) * nc
         model.module.names = names
     else:
-        model.module.nc = nc
+        model.nc = nc
         model.hyp = hyp
         model.class_weights = labels_to_class_weights_whu(train_dataset.lables, nc).to(device) * nc
         model.names = names
@@ -254,7 +254,7 @@ def train(hyp, opt, device, callbacks):
     results = (0, 0, 0, 0, 0, 0, 0)
     scaler = amp.GradScaler(enabled=cuda)
     stopper = EarlyStopping(patience=opt.patience)
-    compute_loss = ComputeLoss(model)
+    compute_loss = ComputeLoss(model, Multi_gpu=MULTI_GPU)
     with open(save_dir / 'result.txt', 'a+') as f:
         write_line = ('%-10s' * 6) % ('Epoch', 'gpu_mem', 'box', 'obj', 'cls', 'seg') + '\n'
         f.writelines(write_line)
