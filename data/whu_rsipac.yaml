@@ -1,6 +1,6 @@
 # Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
-path: /mnt/users/datasets/chusai_crop/  # dataset root dir
-# path: D:\chusai_crop
+# path: /mnt/users/datasets/chusai_crop/  # dataset root dir
+path: /home/xcy/datasets/chusai_crop
 train: ~/dataset/chusai_crop/train  # train images (relative to 'path') 128 images
 val: ~/dataset/chusai_crop/val  # val images (relative to 'path') 128 images
 test:  # test images (optional)
