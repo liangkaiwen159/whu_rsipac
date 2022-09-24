@@ -208,7 +208,7 @@ def train(hyp, opt, device, callbacks):
 
         del ckpt, csd
     # Image sizes
-    gs = max(int(model.module.stride.max()), 32) if MULTI_GPU else max(int(model.stride.max()), )
+    gs = max(int(model.module.stride.max()), 32) if MULTI_GPU else max(int(model.stride.max()), 32)
     # grid size (max stride)
     nl = model.module.model[-2].nl if MULTI_GPU else model.model[-2].nl
     # number of detection layers (used for scaling hyp['obj'])
