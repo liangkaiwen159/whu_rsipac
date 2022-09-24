@@ -10,7 +10,7 @@ from tqdm import tqdm
 from pathlib import Path
 import glob
 # 1: uncross 2: cross
-dataset_root_dir = '/home/xcy/dataset/chusai_crop'
+dataset_root_dir = '/mnt/users/datasets/chusai_crop'
 IMG_FORMATS = ['bmp', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'dng', 'webp', 'mpo']  # acceptable image suffixes
 VID_FORMATS = ['mov', 'avi', 'mp4', 'mpg', 'mpeg', 'm4v', 'wmv', 'mkv']  # acceptable video suffixes
 
