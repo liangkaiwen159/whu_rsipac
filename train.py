@@ -46,7 +46,7 @@ def parse_opt(known=False):
     parser.add_argument('--data', type=str, default=ROOT / 'data/whu_rsipac.yaml', help='dataset.yaml path')
     parser.add_argument('--hyp', type=str, default=ROOT / 'data/hyps/hyp.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=300)
-    parser.add_argument('--batch-size', type=int, default=3, help='total batch size for all GPUs')
+    parser.add_argument('--batch-size', type=int, default=3, help='total batch siSze for all GPUs')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='train, val image size (pixels)')
     parser.add_argument('--rect', action='store_true', help='rectangular training')
     parser.add_argument('--resume', nargs='?', const=True, default=False, help='resume most recent training')
@@ -223,7 +223,7 @@ def train(hyp, opt, device, callbacks):
     val_dataset = Whu_sub_dataset(dataset_root_path, val_dataset_indexs)
     train_loader = DataLoader(train_dataset,
                               batch_size=opt.batch_size,
-                              shuffle=True,
+                              shuffle=False,
                               num_workers=opt.workers,
                               collate_fn=Whu_dataset.col_fun)
     val_loader = DataLoader(val_dataset,
@@ -259,11 +259,15 @@ def train(hyp, opt, device, callbacks):
         write_line = ('%-10s' * 6) % ('Epoch', 'gpu_mem', 'box', 'obj', 'cls', 'seg') + '\n'
         f.writelines(write_line)
     f.close()
+    print(('\n' + '%-10s' * 8) % ('Epoch', 'gpu_mem', 'box', 'obj', 'cls', 'seg', 'labels', 'img_size'))
     writter = SummaryWriter(save_dir)
     for epoch in range(start_epoch, epochs):  # epoch-----------------------
+        gl1 = 5
+        gl2 = 30
+        gl3 = 30
+        gl4 = 3
         model.train()
         mloss = torch.zeros(4, device=device)  # mean loss
-        print(('\n' + '%-10s' * 8) % ('Epoch', 'gpu_mem', 'box', 'obj', 'cls', 'seg', 'labels', 'img_size'))
         pbar = enumerate(train_loader)
         pbar = tqdm(pbar, total=nb)
         optimizer.module.zero_grad() if MULTI_GPU else optimizer.zero_grad()
@@ -314,7 +318,8 @@ def train(hyp, opt, device, callbacks):
             mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
             mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
             pbar.set_description(('%-10s' * 2 + '%-10.5f' * 4 + ('%-10d') * 2) %
-                                 (f'{epoch}/{epochs - 1}', mem, *mloss, n_lables, imgs.shape[-1]))
+                                 (f'{epoch}/{epochs - 1}', mem, mloss[0] * gl1, mloss[1] * gl2, mloss[2] * gl3,
+                                  mloss[3] * gl4, n_lables, imgs.shape[-1]))
         # Scheduler
         # lr = [x['lr'] for x in optimizer.module.param_groups]  # for loggers
         scheduler.module.step() if MULTI_GPU else scheduler.step()
@@ -324,10 +329,10 @@ def train(hyp, opt, device, callbacks):
             write_line = ('%-10s' * 2 + '%-10.5f' * 4) % (f'{epoch}/{epochs - 1}', mem, *mloss) + '\n'
             f.writelines(write_line)
         f.close()
-        writter.add_scalar('lbox', mloss[0], epoch + 1)
-        writter.add_scalar('lobj', mloss[1], epoch + 1)
-        writter.add_scalar('lcls', mloss[2], epoch + 1)
-        writter.add_scalar('lseg', mloss[3], epoch + 1)
+        writter.add_scalar('lbox', mloss[0] * gl1, epoch + 1)
+        writter.add_scalar('lobj', mloss[1] * gl2, epoch + 1)
+        writter.add_scalar('lcls', mloss[2] * gl3, epoch + 1)
+        writter.add_scalar('lseg', mloss[3] * gl4, epoch + 1)
         ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'names', 'stride', 'class_weights'])
         final_epoch = (epoch + 1 == epochs) or stopper.possible_stop
         # if not noval or final_epoch:  # Calculate mAP
@@ -366,7 +371,8 @@ def train(hyp, opt, device, callbacks):
             del ckpt
         for f in last, best:
             if f.exists():
-                strip_optimizer(f)  # strip optimizers
+                pass
+                # strip_optimizer(f)  # strip optimizers
                 # if f is best:
                 #     results, _, _ = val.run(
                 #         data_dict,
