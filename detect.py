@@ -92,6 +92,7 @@ def run(
         img_list = {}
         over_all_label = []
         over_all_xyxy = []
+        over_all_c = []
         for k, img in __img_list.items():
             img = img.half() if half else img.float()  # uint8 to fp16/32
             img = img / 255.0  # 0 - 255 to 0.0 - 1.0
@@ -152,6 +153,7 @@ def run(
                             annotator.box_label(xyxy, label, color=colors(c, True))
                             j, i = map(int, k.split('_'))
                             _over_all_xyxy = np.concatenate((XY_sequence[j][i][0:2], XY_sequence[j][i][0:2])) + xyxy
+                            over_all_c.append(c)
                             over_all_xyxy.append(_over_all_xyxy)
                             over_all_label.append(label)
 
@@ -170,8 +172,9 @@ def run(
         # Stream results
         ori_img_annotator = Annotator(ori_img, line_width=line_thickness, example=str(names))
         for index in range(len(over_all_xyxy)):  # 获取所有标注 绘制
+            c = over_all_c[index]
             ori_img_annotator.box_label(over_all_xyxy[index], over_all_label[index], color=colors(c, True))
-        # im0 = cat_img(ori_shape, img_list, XY_sequence) #绘制好的图片直接拼接
+        # im0 = cat_img(ori_shape, img_list, XY_sequence)  #绘制好的图片直接拼接
         im0 = ori_img_annotator.result()  # 获取所有标注 绘制的图片
         msk0 = cat_img(ori_shape, mask_img_list, XY_sequence, mask=True)
         if view_img:
@@ -207,13 +210,17 @@ def run(
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'last.pt', help='model path(s)')
+    parser.add_argument('--weights',
+                        nargs='+',
+                        type=str,
+                        default=ROOT / 'test_weights' / 'last-44.pt',
+                        help='model path(s)')
     parser.add_argument('--source',
                         type=str,
-                        default='/home/xcy/dataset/chusai_crop/test/images/',
+                        default='/mnt/users/datasets/chusai_crop/test/images/',
                         help='file/dir/URL/glob, 0 for webcam')
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')
-    parser.add_argument('--conf-thres', type=float, default=0.01, help='confidence threshold')
+    parser.add_argument('--conf-thres', type=float, default=0.2, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='NMS IoU threshold')
     parser.add_argument('--max-det', type=int, default=1000, help='maximum detections per image')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
