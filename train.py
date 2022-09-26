@@ -316,7 +316,7 @@ def train(hyp, opt, device, callbacks):
             pbar.set_description(('%-10s' * 2 + '%-10.5f' * 4 + ('%-10d') * 2) %
                                  (f'{epoch}/{epochs - 1}', mem, *mloss, n_lables, imgs.shape[-1]))
         # Scheduler
-        lr = [x['lr'] for x in optimizer.module.param_groups]  # for loggers
+        # lr = [x['lr'] for x in optimizer.module.param_groups]  # for loggers
         scheduler.module.step() if MULTI_GPU else scheduler.step()
 
         # Logggggg
