@@ -6,3 +6,4 @@ dataset/__pycache__/
 runs/
 test_output.jpg
 last.pt
+remain.pt
