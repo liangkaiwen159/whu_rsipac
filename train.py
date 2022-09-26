@@ -266,6 +266,7 @@ def train(hyp, opt, device, callbacks):
         gl2 = 30
         gl3 = 30
         gl4 = 3
+        gl_all = torch.tensor([gl1, gl2, gl3, gl4], device=device)
         model.train()
         mloss = torch.zeros(4, device=device)  # mean loss
         pbar = enumerate(train_loader)
@@ -318,15 +319,14 @@ def train(hyp, opt, device, callbacks):
             mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
             mem = f'{torch.cuda.memory_reserved() / 1E9 if torch.cuda.is_available() else 0:.3g}G'  # (GB)
             pbar.set_description(('%-10s' * 2 + '%-10.5f' * 4 + ('%-10d') * 2) %
-                                 (f'{epoch}/{epochs - 1}', mem, mloss[0] * gl1, mloss[1] * gl2, mloss[2] * gl3,
-                                  mloss[3] * gl4, n_lables, imgs.shape[-1]))
+                                 (f'{epoch}/{epochs - 1}', mem, *(mloss * gl_all), n_lables, imgs.shape[-1]))
         # Scheduler
         # lr = [x['lr'] for x in optimizer.module.param_groups]  # for loggers
         scheduler.module.step() if MULTI_GPU else scheduler.step()
 
         # Logggggg
         with open(save_dir / 'result.txt', 'a+') as f:
-            write_line = ('%-10s' * 2 + '%-10.5f' * 4) % (f'{epoch}/{epochs - 1}', mem, *mloss) + '\n'
+            write_line = ('%-10s' * 2 + '%-10.5f' * 4) % (f'{epoch}/{epochs - 1}', mem, *(mloss * gl_all)) + '\n'
             f.writelines(write_line)
         f.close()
         writter.add_scalar('lbox', mloss[0] * gl1, epoch + 1)

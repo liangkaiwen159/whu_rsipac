@@ -84,11 +84,14 @@ def run(
     for path, img, im0s, vid_cap in dataset:
         # img C H W,  R G B
         ori_shape = img.shape  # (3,3449,5903)
+        ori_img = np.ascontiguousarray(img[::-1].transpose(1, 2, 0))  # HWC BRG
         t1 = time_sync()
         _img_list, XY_sequence = crop_img(img.transpose(1, 2, 0))  #rgb
         __img_list = {k: torch.from_numpy(np.ascontiguousarray(img)).to(device) for (k, img) in _img_list.items()}
         mask_img_list = {k: None for k, img in _img_list.items()}
         img_list = {}
+        over_all_label = []
+        over_all_xyxy = []
         for k, img in __img_list.items():
             img = img.half() if half else img.float()  # uint8 to fp16/32
             img = img / 255.0  # 0 - 255 to 0.0 - 1.0
@@ -147,6 +150,11 @@ def run(
                             c = int(cls)  # integer class
                             label = None if hide_labels else (names[c] if hide_conf else f'{names[c]} {conf:.2f}')
                             annotator.box_label(xyxy, label, color=colors(c, True))
+                            j, i = map(int, k.split('_'))
+                            _over_all_xyxy = np.concatenate((XY_sequence[j][i][0:2], XY_sequence[j][i][0:2])) + xyxy
+                            over_all_xyxy.append(_over_all_xyxy)
+                            over_all_label.append(label)
+
             img_list[k] = annotator.result().transpose((2, 0, 1))  #rgb
             mask = mask[0, ...].sigmoid()
             fill_zero = mask < 0.5
@@ -160,7 +168,11 @@ def run(
             # Print time (inference-only)
         print(f'{ori_shape[1:]}Done. ({t3 - t2:.3f}s)')
         # Stream results
-        im0 = cat_img(ori_shape, img_list, XY_sequence)
+        ori_img_annotator = Annotator(ori_img, line_width=line_thickness, example=str(names))
+        for index in range(len(over_all_xyxy)):  # 获取所有标注 绘制
+            ori_img_annotator.box_label(over_all_xyxy[index], over_all_label[index], color=colors(c, True))
+        # im0 = cat_img(ori_shape, img_list, XY_sequence) #绘制好的图片直接拼接
+        im0 = ori_img_annotator.result()  # 获取所有标注 绘制的图片
         msk0 = cat_img(ori_shape, mask_img_list, XY_sequence, mask=True)
         if view_img:
             cv2.imshow(str(p), im0)
