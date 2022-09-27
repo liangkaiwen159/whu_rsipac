@@ -316,7 +316,11 @@ def run(
 def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=str, default=ROOT / 'data' / 'whu_rsipac.yaml', help='dataset.yaml path')
-    parser.add_argument('--weights', nargs='+', type=str, default=ROOT / 'last.pt', help='model.pt path(s)')
+    parser.add_argument('--weights',
+                        nargs='+',
+                        type=str,
+                        default=ROOT / 'test_weights' / 'last-139.pt',
+                        help='model.pt path(s)')
     parser.add_argument('--batch-size', type=int, default=4, help='batch size')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='inference size (pixels)')
     parser.add_argument('--conf-thres', type=float, default=0.5, help='confidence threshold')
@@ -349,5 +353,5 @@ def main(opt, val_loader):
 
 if __name__ == "__main__":
     opt = parse_opt()
-    val_loader = creat_val_loader('/home/xcy/dataset/chusai_crop', batch_size=opt.batch_size)
+    val_loader = creat_val_loader('/mnt/users/datasets/chusai_crop/', batch_size=opt.batch_size)
     main(opt, val_loader)

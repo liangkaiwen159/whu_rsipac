@@ -190,14 +190,14 @@ class Whu_sub_dataset(Whu_dataset):
         return img, mask_img, self.out_lables[index]
 
 
-def creat_val_loader(dataset_root_path, batch_size=1, num_workers=1):
+def creat_val_loader(dataset_root_path, batch_size=1, num_workers=0):
     np.random.seed(0)
     whu_dataset = Whu_dataset(dataset_root_path, cache=True)
     train_dataset_size = int(len(whu_dataset) * 0.9)
     train_dataset_indexs = np.random.choice(np.arange(len(whu_dataset)), train_dataset_size, replace=False)
     val_dataset_indexs = np.setdiff1d(np.arange(len(whu_dataset)), train_dataset_indexs)
     val_dataset = Whu_sub_dataset(dataset_root_path, val_dataset_indexs)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, num_workers=num_workers)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, num_workers=num_workers, collate_fn=Whu_dataset.col_fun)
     return val_loader
 
 
