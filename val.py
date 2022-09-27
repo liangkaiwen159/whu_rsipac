@@ -197,13 +197,14 @@ def run(
         targets[:, 2:] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
         lb = [targets[targets[:, 0] == i, 1:] for i in range(nb)] if save_hybrid else []  # for autolabelling
         t3 = time_sync()
+        # out batch中每张图片的输出
         out = non_max_suppression(pred, conf_thres, iou_thres, labels=lb, multi_label=True, agnostic=single_cls)
         dt[2] += time_sync() - t3
 
         # Statistics per image
         for si, pred_ in enumerate(out):
-            labels_ = targets[targets[:, 0] == si, 1:]
-            nl = len(labels_)
+            labels_ = targets[targets[:, 0] == si, 1:]  # 当前图片的gt标注
+            nl = len(labels_)  # gt标注的个数
             tcls = labels_[:, 0].tolist() if nl else []  # target class
             shape = img[si].shape[1:]
             seen += 1
@@ -319,11 +320,11 @@ def parse_opt():
     parser.add_argument('--weights',
                         nargs='+',
                         type=str,
-                        default=ROOT / 'test_weights' / 'last-139.pt',
+                        default=ROOT / 'test_weights' / 'last-64.pt',
                         help='model.pt path(s)')
     parser.add_argument('--batch-size', type=int, default=4, help='batch size')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='inference size (pixels)')
-    parser.add_argument('--conf-thres', type=float, default=0.5, help='confidence threshold')
+    parser.add_argument('--conf-thres', type=float, default=0.01, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.6, help='NMS IoU threshold')
     parser.add_argument('--task', default='val', help='train, val, test, speed or study')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
@@ -353,5 +354,5 @@ def main(opt, val_loader):
 
 if __name__ == "__main__":
     opt = parse_opt()
-    val_loader = creat_val_loader('/mnt/users/datasets/chusai_crop/', batch_size=opt.batch_size)
+    val_loader = creat_val_loader('/home/xcy/dataset/chusai_crop', batch_size=opt.batch_size)
     main(opt, val_loader)

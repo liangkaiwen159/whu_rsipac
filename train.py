@@ -223,7 +223,7 @@ def train(hyp, opt, device, callbacks):
     val_dataset = Whu_sub_dataset(dataset_root_path, val_dataset_indexs)
     train_loader = DataLoader(train_dataset,
                               batch_size=opt.batch_size,
-                              shuffle=False,
+                              shuffle=True,
                               num_workers=opt.workers,
                               collate_fn=Whu_dataset.col_fun)
     val_loader = DataLoader(val_dataset,
