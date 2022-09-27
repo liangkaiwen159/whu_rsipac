@@ -7,3 +7,4 @@ runs/
 test_output.jpg
 last.pt
 remain.pt
+test_weights/

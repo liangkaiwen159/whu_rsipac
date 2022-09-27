@@ -47,8 +47,8 @@ class Whu_dataset(Dataset):
                     _lable = []
                     lable = lable.split('\n')[0]
                     it_cls, x1, y1, x2, y2 = [int(x) for x in lable.split(' ')]
-                    center_x = (x1 + x2) / 640
-                    center_y = (y1 + y2) / 640
+                    center_x = (x1 + x2) / 1280
+                    center_y = (y1 + y2) / 1280
                     w = (x2 - x1) / 640
                     h = (y2 - y1) / 640
                     self.lables.append([it_cls, center_x, center_y, w, h])
