@@ -20,11 +20,21 @@ import numpy as np
 # j = j[0]
 # print(j)
 
-a = torch.tensor([[3, 4, 5, 6, 7, 8]])
-t1 = 0
-b = torch.tensor([[7, 8, 9, 10, 11, 12]])
-t2 = 8
-# x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))
-x = torch.where((a > t1) & (b == t2))
-print(x)
-print(a[0, 1])
+# a = torch.tensor([[3, 4, 5, 6, 7, 8]])
+# t1 = 0
+# b = torch.tensor([[7, 8, 9, 10, 11, 12]])
+# t2 = 8
+# # x = torch.where((iou >= iouv[0]) & (labels[:, 0:1] == detections[:, 5]))
+# x = torch.where((a > t1) & (b == t2))
+# print(x)
+# print(a[0, 1])
+
+a = np.array([
+    np.array([True, False, True, False, True, False, False, False]),
+    np.array([False, False, False, False, False, False, False, False]),
+    np.array([False, False, False, False, True, False, False, False]),
+    np.array([False, False, False, False, False, False, False, False]),
+    np.array([False, False, False, False, True, False, False, False]),
+])
+b = np.array((True, False, False, False, True), )
+print(a.sum())

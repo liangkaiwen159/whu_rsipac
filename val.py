@@ -162,11 +162,13 @@ def run(
     confusion_matrix = ConfusionMatrix(nc=nc)
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
     class_map = coco80_to_coco91_class() if is_coco else list(range(1000))
-    s = ('%20s' + '%11s' * 6) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
-    dt, p, r, f1, mp, mr, map50, map = [0.0, 0.0, 0.0], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+    s = ('%-10s' + '%-11s' * 8) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95', 'bgd_pr', 'load_pr')
+    dt, p, r, f1, mp, mr, map50, map, mask_pr_c1s, mask_pr_c2s = [0.0, 0.0,
+                                                                  0.0], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
     loss = torch.zeros(4, device=device)
     jdict, stats, ap, ap_class = [], [], [], []
     for batch_i, (img, masks, gt_lables) in enumerate(tqdm(dataloader, desc=s)):
+        masks.to(device)
         _targets = []
         for i, gt_lable in enumerate(gt_lables):
             _subtargets = []
@@ -185,13 +187,25 @@ def run(
         dt[0] += t2 - t1
 
         # Run model
-        pred, pred_mask = model(img)  # inference and training outputs
+        pred, pred_masks = model(img)  # inference and training outputs
         pred = pred[0]
         dt[1] += time_sync() - t2
-
+        # Seg eval
+        masks = masks.to(device)
+        pred_masks = pred_masks.sigmoid()
+        mask_c1_idx = masks < 0.5
+        mask_c2_idx = masks >= 0.5
+        pre_mask_c1_idx = pred_masks < 0.5
+        pre_mask_c2_idx = pred_masks >= 0.5
+        mask_tp_c1 = (mask_c1_idx == pre_mask_c1_idx).sum()
+        mask_tp_c2 = (mask_c2_idx == pre_mask_c2_idx).sum()
+        mask_fp_c1 = (mask_c2_idx == pre_mask_c1_idx).sum()
+        mask_fp_c2 = (mask_c1_idx == pre_mask_c2_idx).sum()
+        mask_pr_c1s += mask_tp_c1 / (mask_tp_c1 + mask_fp_c1)
+        mask_pr_c2s += mask_tp_c2 / (mask_tp_c2 + mask_fp_c2)
         # Compute loss
         if compute_loss:
-            loss += compute_loss(pred, gt_lables, masks)[1]  # box, obj, cls
+            loss += compute_loss(pred, gt_lables, masks, device=device)[1]  # box, obj, cls
 
         # Run NMS
         targets[:, 2:] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
@@ -212,7 +226,7 @@ def run(
             if len(pred_) == 0:
                 if nl:
                     stats.append((torch.zeros(0, niou, dtype=torch.bool), torch.Tensor(), torch.Tensor(), tcls))
-                continue
+                continue  # 没有预测，没有真实标注的样本调过，stats不添加任何东西
 
             # Predictions
             if single_cls:
@@ -248,6 +262,8 @@ def run(
             # Thread(target=plot_images, args=(img, output_to_target(out), paths, f, names), daemon=True).start()
 
     # Compute statistics
+    mask_pr_c1s /= (batch_i + 1)
+    mask_pr_c2s /= (batch_i + 1)
     stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
     if len(stats) and stats[0].any():  #stats[[true,false,...],[conf],[pcls],[tcls]]
         p, r, ap, f1, ap_class = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
@@ -258,13 +274,13 @@ def run(
         nt = torch.zeros(1)
 
     # Print results
-    pf = '%20s' + '%11i' * 2 + '%11.3g' * 4  # print format
-    print(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
+    pf = '%-10s' + '%-11i' * 2 + '%-11.3g' * 6  # print format
+    print(pf % ('all', seen, nt.sum(), mp, mr, map50, map, mask_pr_c1s, mask_pr_c2s))
 
     # Print results per class
     if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
         for i, c in enumerate(ap_class):
-            print(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
+            print(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i], mask_pr_c1s, mask_pr_c2s))
 
     # Print speeds
     t = tuple(x / seen * 1E3 for x in dt)  # speeds per image
@@ -311,7 +327,8 @@ def run(
     maps = np.zeros(nc) + map
     for i, c in enumerate(ap_class):
         maps[c] = ap[i]
-    return (mp, mr, map50, map, *(loss.cpu() / len(dataloader)).tolist()), maps, t
+    return (mp, mr, map50, map, mask_pr_c1s.item(), mask_pr_c2s.item(),
+            *(loss.cpu() / len(dataloader)).tolist()), maps, t
 
 
 def parse_opt():
@@ -320,11 +337,11 @@ def parse_opt():
     parser.add_argument('--weights',
                         nargs='+',
                         type=str,
-                        default=ROOT / 'test_weights' / 'last-14.pt',
+                        default=ROOT / 'test_weights' / 'last-22.pt',
                         help='model.pt path(s)')
     parser.add_argument('--batch-size', type=int, default=4, help='batch size')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='inference size (pixels)')
-    parser.add_argument('--conf-thres', type=float, default=0.5, help='confidence threshold')
+    parser.add_argument('--conf-thres', type=float, default=0.01, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.6, help='NMS IoU threshold')
     parser.add_argument('--task', default='val', help='train, val, test, speed or study')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
@@ -354,5 +371,5 @@ def main(opt, val_loader):
 
 if __name__ == "__main__":
     opt = parse_opt()
-    val_loader = creat_val_loader('/mnt/users/datasets/chusai_crop/', batch_size=opt.batch_size, split_num=0.999)
+    val_loader = creat_val_loader('/home/xcy/dataset/chusai_crop', batch_size=opt.batch_size, split_num=0.9)
     main(opt, val_loader)

@@ -10,6 +10,7 @@ from pathlib import Path
 
 from utils.loss import ComputeLoss
 from torch.utils.tensorboard import SummaryWriter
+from val import run
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -89,7 +90,7 @@ def train(hyp, opt, device, callbacks):
         opt.save_dir), opt.epochs, opt.batch_size, opt.weights, opt.single_cls
     evolve, data, cfg, resume, noval = opt.evolve, opt.data, opt.cfg, opt.resume, opt.noval
     nosave, workers, freeze = opt.nosave, opt.workers, opt.freeze
-
+    slow = True
     # Directories
     w = save_dir / 'weights'
     (w.parent if evolve else w).mkdir(parents=True, exist_ok=True)  # make dir
@@ -230,7 +231,7 @@ def train(hyp, opt, device, callbacks):
                             batch_size=opt.batch_size,
                             num_workers=opt.workers,
                             collate_fn=Whu_dataset.col_fun)
-    nb = len(train_loader)  # number of batches
+    nb = len(train_loader if slow else val_loader)  # number of batches
     # Model parameters
     hyp['box'] *= 3. / nl
     hyp['cls'] *= nc / 80. * 3. / nl
@@ -251,7 +252,7 @@ def train(hyp, opt, device, callbacks):
     nw = max(round(hyp['warmup_epochs'] * nb), 1000)  # number of warmup iterations,
     last_opt_step = -1
     maps = np.zeros(nc)  # mAP per class
-    results = (0, 0, 0, 0, 0, 0, 0)
+    results = (0, 0, 0, 0, 0, 0, 0, 0, 0)
     scaler = amp.GradScaler(enabled=cuda)
     stopper = EarlyStopping(patience=opt.patience)
     compute_loss = ComputeLoss(model, Multi_gpu=MULTI_GPU)
@@ -259,9 +260,10 @@ def train(hyp, opt, device, callbacks):
         write_line = ('%-10s' * 6) % ('Epoch', 'gpu_mem', 'box', 'obj', 'cls', 'seg') + '\n'
         f.writelines(write_line)
     f.close()
-    print(('\n' + '%-10s' * 8) % ('Epoch', 'gpu_mem', 'box', 'obj', 'cls', 'seg', 'labels', 'img_size'))
     writter = SummaryWriter(save_dir)
     for epoch in range(start_epoch, epochs):  # epoch-----------------------
+        print('*' * 20, 'Train', '*' * 20)
+        print(('%-10s' * 8) % ('Epoch', 'gpu_mem', 'box', 'obj', 'cls', 'seg', 'labels', 'img_size'))
         gl1 = 5
         gl2 = 30
         gl3 = 30
@@ -269,7 +271,7 @@ def train(hyp, opt, device, callbacks):
         gl_all = torch.tensor([gl1, gl2, gl3, gl4], device=device)
         model.train()
         mloss = torch.zeros(4, device=device)  # mean loss
-        pbar = enumerate(train_loader)
+        pbar = enumerate(train_loader if slow else val_loader)
         pbar = tqdm(pbar, total=nb)
         optimizer.module.zero_grad() if MULTI_GPU else optimizer.zero_grad()
         for i, (imgs, masks, lables) in pbar:  # batch
@@ -325,32 +327,42 @@ def train(hyp, opt, device, callbacks):
         scheduler.module.step() if MULTI_GPU else scheduler.step()
 
         # Logggggg
-        with open(save_dir / 'result.txt', 'a+') as f:
-            write_line = ('%-10s' * 2 + '%-10.5f' * 4) % (f'{epoch}/{epochs - 1}', mem, *(mloss * gl_all)) + '\n'
-            f.writelines(write_line)
-        f.close()
+
         writter.add_scalar('lbox', mloss[0] * gl1, epoch + 1)
         writter.add_scalar('lobj', mloss[1] * gl2, epoch + 1)
         writter.add_scalar('lcls', mloss[2] * gl3, epoch + 1)
         writter.add_scalar('lseg', mloss[3] * gl4, epoch + 1)
         ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'names', 'stride', 'class_weights'])
         final_epoch = (epoch + 1 == epochs) or stopper.possible_stop
-        # if not noval or final_epoch:  # Calculate mAP
-        #     results, maps, _ = val.run(data_dict,
-        #                                batch_size=batch_size // WORLD_SIZE * 2,
-        #                                imgsz=imgsz,
-        #                                model=ema.ema,
-        #                                single_cls=single_cls,
-        #                                dataloader=val_loader,
-        #                                save_dir=save_dir,
-        #                                plots=False,
-        #                                callbacks=callbacks,
-        #                                compute_loss=compute_loss)
-        #Update best mAP
+        print('*' * 20, 'Eval', '*' * 20)
+        if not noval or final_epoch:  # Calculate mAP
+            results, maps, _ = run(data_dict,
+                                   batch_size=batch_size // 2,
+                                   imgsz=imgsz,
+                                   model=ema.ema,
+                                   single_cls=single_cls,
+                                   dataloader=val_loader,
+                                   save_dir=save_dir,
+                                   plots=False,
+                                   callbacks=callbacks,
+                                   compute_loss=None)
+        #Update best mAP and write
         fi = fitness(np.array(results).reshape(1, -1))  # weighted combination of [P, R, mAP@.5, mAP@.5-.95]
+        print('fi:', '%.4f ' % fi[0].item(), 'bestfitness:', '%.4f' % best_fitness)
+        with open(save_dir / 'result.txt', 'a+') as f_result:
+            write_line = ('%-10s' * 2 + '%-10.5f' * 4) % (f'{epoch}/{epochs - 1}', mem, *(mloss * gl_all)) + '\n'
+            f_result.writelines(write_line)
+            f_result.writelines([
+                'result:', '%.4f ' * 6 % results[0:6], ' fi: ',
+                '%.4f ' % fi[0].item(), ' bestfitness: ',
+                '%.4f' % best_fitness, '\n'
+            ])
         if fi > best_fitness:
             best_fitness = fi
-
+            print('Update best')
+            with open(save_dir / 'result.txt', 'a+') as f_result:
+                f_result.writelines(['Update best', '\n'])
+        f_result.close()
         # Save model
         if (not nosave) or (final_epoch and not evolve):  # if save
             ckpt = {
@@ -369,25 +381,24 @@ def train(hyp, opt, device, callbacks):
             if (epoch > 0) and (opt.save_period > 0) and (epoch % opt.save_period == 0):
                 torch.save(ckpt, w / f'epoch{epoch}.pt')
             del ckpt
-        for f in last, best:
-            if f.exists():
-                pass
-                # strip_optimizer(f)  # strip optimizers
-                # if f is best:
-                #     results, _, _ = val.run(
-                #         data_dict,
-                #         batch_size=batch_size // WORLD_SIZE * 2,
-                #         imgsz=imgsz,
-                #         model=attempt_load(f, device).half(),
-                #         iou_thres=0.65 if is_coco else 0.60,  # best pycocotools results at 0.65
-                #         single_cls=single_cls,
-                #         dataloader=val_loader,
-                #         save_dir=save_dir,
-                #         save_json=is_coco,
-                #         verbose=True,
-                #         plots=True,
-                #         callbacks=callbacks,
-                #         compute_loss=compute_loss)  # val best model with plots
+    for f in last, best:
+        if f.exists():
+            # strip_optimizer(f)  # strip optimizers
+            if f is best:
+                results, _, _ = run(
+                    data_dict,
+                    batch_size=batch_size // 2,
+                    imgsz=imgsz,
+                    model=torch.load(f, device).half(),
+                    iou_thres=0.65,  # best pycocotools results at 0.65
+                    single_cls=single_cls,
+                    dataloader=val_loader,
+                    save_dir=save_dir,
+                    save_json=None,
+                    verbose=True,
+                    plots=True,
+                    callbacks=callbacks,
+                    compute_loss=None)  # val best model with plots
     torch.cuda.empty_cache()
     return results
 

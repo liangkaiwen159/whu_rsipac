@@ -8,3 +8,4 @@ test_output.jpg
 last.pt
 remain.pt
 test_weights/
+/__pycache__
