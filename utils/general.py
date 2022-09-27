@@ -716,6 +716,15 @@ def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=Non
 
     return output
 
+def nms_for_self(boxes,iou_thres=0.45):
+    """_summary_
+
+    Args:
+        boxes (_type_): [xyxy,conf,cls]
+        iou_thres (float, optional): iou_thres. Defaults to 0.45.
+    Return:
+        [xyxy,conf,cls]
+    """
 
 def strip_optimizer(f='best.pt', s=''):  # from utils.general import *; strip_optimizer()
     # Strip optimizer from 'f' to finalize training, optionally save as 's'

@@ -171,6 +171,7 @@ def run(
         print(f'{ori_shape[1:]}Done. ({t3 - t2:.3f}s)')
         # Stream results
         ori_img_annotator = Annotator(ori_img, line_width=line_thickness, example=str(names))
+        # pred = non_max_suppression(pred, conf_thres, iou_thres, classes, agnostic_nms, max_det=max_det)
         for index in range(len(over_all_xyxy)):  # 获取所有标注 绘制
             c = over_all_c[index]
             ori_img_annotator.box_label(over_all_xyxy[index], over_all_label[index], color=colors(c, True))
@@ -213,7 +214,7 @@ def parse_opt():
     parser.add_argument('--weights',
                         nargs='+',
                         type=str,
-                        default=ROOT / 'test_weights' / 'last-139.pt',
+                        default=ROOT / 'test_weights' / 'last-14.pt',
                         help='model path(s)')
     parser.add_argument('--source',
                         type=str,
