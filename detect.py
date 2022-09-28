@@ -125,8 +125,8 @@ def run(
                 p, s, im0, frame = path, '', img[0].to('cpu').numpy().transpose(
                     (1, 2, 0)).copy(), getattr(dataset, 'frame', 0)  #im0 rgb
                 p = Path(p)  # to Path
-                save_path = str(save_dir / 'imgs' / p.name.replace('tif', 'jpg'))  # img.jpg
-                save_mask_path = str(save_dir / 'masks' / p.name.replace('tif', 'jpg'))
+                save_path = str(save_dir / 'imgs' / p.name.replace('tif', 'png'))  # img.jpg
+                save_mask_path = str(save_dir / 'masks' / p.name.replace('tif', 'png'))
                 txt_path = str(save_dir / 'labels' / p.stem) + ('' if dataset.mode == 'image' else f'_{frame}'
                                                                 )  # img.txt
                 s += '%gx%g ' % img.shape[2:]  # print string
@@ -181,7 +181,7 @@ def run(
         print(f'{ori_shape[1:]}Done. ({t3 - t2:.3f}s)')
         # Stream results
         ori_img_annotator = Annotator(ori_img, line_width=line_thickness, example=str(names))
-        nmsed_boxes = nms_for_self(over_all_to_nms)
+        nmsed_boxes = nms_for_self(over_all_to_nms, iou_thres=0.5)
         if nmsed_boxes is not None:
             for nmsed_box in nmsed_boxes:
                 c = int(nmsed_box[5])
@@ -192,7 +192,7 @@ def run(
         # for index in range(len(over_all_xyxy)):  # 获取所有标注 绘制
         #     c = over_all_c[index]
         #     ori_img_annotator.box_label(over_all_xyxy[index], over_all_label[index], color=colors(c, True))
-        # im0 = cat_img(ori_shape, img_list, XY_sequence)  #绘制好的图片直接拼接
+        # im0 = cat_img(ori_shape, img_list, XY_sequence)  #绘制好的图片直接拼
         im0 = ori_img_annotator.result()  # 获取所有标注 绘制的图片
         msk0 = cat_img(ori_shape, mask_img_list, XY_sequence, mask=True)
         if view_img:
@@ -241,7 +241,7 @@ def parse_opt():
         default='/home/xcy/dataset/chusai_release/test/images/',
         help='file/dir/URL/glob, 0 for webcam')
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')
-    parser.add_argument('--conf-thres', type=float, default=0.5, help='confidence threshold')
+    parser.add_argument('--conf-thres', type=float, default=0.4, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='NMS IoU threshold')
     parser.add_argument('--max-det', type=int, default=1000, help='maximum detections per image')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
