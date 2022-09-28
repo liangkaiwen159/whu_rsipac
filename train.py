@@ -348,6 +348,9 @@ def train(hyp, opt, device, callbacks):
                                    compute_loss=None)
         #Update best mAP and write
         fi = fitness(np.array(results).reshape(1, -1))  # weighted combination of [P, R, mAP@.5, mAP@.5-.95]
+        writter.add_scalar('Precision', results[0], epoch + 1)
+        writter.add_scalar('Precision', results[0], epoch + 1)
+        writter.add_scalar('SegPre', results[-1], epoch + 1)
         print('fi:', '%.4f ' % fi[0].item(), 'bestfitness:', '%.4f' % best_fitness)
         with open(save_dir / 'result.txt', 'a+') as f_result:
             write_line = ('%-10s' * 2 + '%-10.5f' * 4) % (f'{epoch}/{epochs - 1}', mem, *(mloss * gl_all)) + '\n'
