@@ -340,6 +340,7 @@ def train(hyp, opt, device, callbacks):
                                    batch_size=batch_size // 2,
                                    imgsz=imgsz,
                                    model=ema.ema,
+                                   conf_thres=0.5
                                    single_cls=single_cls,
                                    dataloader=val_loader,
                                    save_dir=save_dir,
