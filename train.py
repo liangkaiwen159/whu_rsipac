@@ -228,8 +228,8 @@ def train(hyp, opt, device, callbacks):
                               num_workers=opt.workers,
                               collate_fn=Whu_dataset.col_fun)
     val_loader = DataLoader(val_dataset,
-                            batch_size=opt.batch_size,
-                            num_workers=opt.workers,
+                            batch_size=min(opt.batch_size, 4),
+                            num_workers=min(opt.workers, 1),
                             collate_fn=Whu_dataset.col_fun)
     nb = len(train_loader if slow else val_loader)  # number of batches
     # Model parameters
