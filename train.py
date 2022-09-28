@@ -340,7 +340,7 @@ def train(hyp, opt, device, callbacks):
                                    batch_size=batch_size // 2,
                                    imgsz=imgsz,
                                    model=ema.ema,
-                                   conf_thres=0.5
+                                   conf_thres=0.5,
                                    single_cls=single_cls,
                                    dataloader=val_loader,
                                    save_dir=save_dir,
@@ -396,6 +396,7 @@ def train(hyp, opt, device, callbacks):
                     model=torch.load(f, device).half(),
                     iou_thres=0.65,  # best pycocotools results at 0.65
                     single_cls=single_cls,
+                    conf_thres=0.5,
                     dataloader=val_loader,
                     save_dir=save_dir,
                     save_json=None,
