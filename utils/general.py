@@ -716,15 +716,36 @@ def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=Non
 
     return output
 
-def nms_for_self(boxes,iou_thres=0.45):
+def nms_for_self(over_all_to_nms,iou_thres=0.45):
     """_summary_
 
     Args:
-        boxes (_type_): [xyxy,conf,cls]
+        over_all_to_nms (_type_): [xyxy,cls,config]
         iou_thres (float, optional): iou_thres. Defaults to 0.45.
     Return:
-        [xyxy,conf,cls]
+        [xyxy,cls,config]
     """
+    if len(over_all_to_nms) == 0:
+        return None
+    outputs = []
+    over_all_to_nms = np.array(over_all_to_nms)
+    all_xyxy = over_all_to_nms[:,:4]
+    all_cls = over_all_to_nms[:,4]
+    all_conf = over_all_to_nms[:,5]
+    unique_cls = np.unique(all_cls,return_index=False,axis=0)
+    for cls in unique_cls:
+        cls_index = all_cls == cls
+        c_xyxy = all_xyxy[cls_index]
+        c_conf = all_conf[cls_index]
+        c_cls = all_cls[cls_index]
+        remain_index = torchvision.ops.nms(torch.tensor(c_xyxy),torch.tensor(c_conf),iou_thres)
+        remain_xyxy = c_xyxy[remain_index]
+        remain_conf = c_conf[remain_index][...,None]
+        remain_cls = c_cls[remain_index][...,None]
+        outputs.append(np.concatenate((remain_xyxy,remain_conf,remain_cls),axis=1) if remain_index.shape[0] > 1 else [np.concatenate((remain_xyxy,remain_conf,remain_cls),axis=-1)])
+    outputs = np.concatenate(outputs,axis=0)
+    return outputs
+    
 
 def strip_optimizer(f='best.pt', s=''):  # from utils.general import *; strip_optimizer()
     # Strip optimizer from 'f' to finalize training, optionally save as 's'

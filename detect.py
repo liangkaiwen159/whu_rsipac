@@ -1,4 +1,5 @@
 import argparse
+from asyncio import WriteTransport
 import os
 import sys
 from pathlib import Path
@@ -11,6 +12,7 @@ from dataset.pro_dataset import LoadImages
 from utils.plot import Annotator, colors
 from utils.crop_img_for_detect import crop_img, cat_img
 from utils.torch_utils import select_device, time_sync
+from utils.write_json import Write_json
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -18,7 +20,7 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))  # add ROOT to PATH
 ROOT = Path(os.path.relpath(ROOT, Path.cwd()))  # relative
 
-from utils.general import check_img_size, check_suffix, colorstr, increment_path, non_max_suppression, save_one_box, scale_coords, xyxy2xywh
+from utils.general import check_img_size, check_suffix, colorstr, increment_path, nms_for_self, non_max_suppression, save_one_box, scale_coords, xyxy2xywh
 
 
 @torch.no_grad()
@@ -48,7 +50,7 @@ def run(
         hide_conf=False,  # hide confidences
         half=False,  # use FP16 half-precision inference
         dnn=False,  # use OpenCV DNN for ONNX inference
-):
+        json_path=None):
     source = str(source)
     save_img = not nosave and not source.endswith('.txt')  # save inference images
     webcam = source.isnumeric() or source.endswith('.txt') or source.lower().startswith(
@@ -68,6 +70,7 @@ def run(
     pt, onnx, tflite, pb, saved_model = (suffix == x for x in suffixes)  # backend booleans
     stride, names = 64, [f'class{i}' for i in range(1000)]  # assign defaults
     if pt:
+        device = torch.device('cuda:1')
         model = torch.load(w, map_location=device)['model']
         # model = torch.jit.load(w) if 'torchscript' in w else attempt_load(weights, map_location=device)
         stride = int(model.stride.max())  # model stride
@@ -76,6 +79,7 @@ def run(
             model.half()  # to FP16
     imgsz = check_img_size(imgsz, s=stride)  # check image size
     dataset = LoadImages(source, img_size=imgsz, stride=stride, auto=pt)
+    write_json = Write_json(json_path)
     bs = 1  # batch_size
     vid_path, vid_writer = [None] * bs, [None] * bs
     if pt and device.type != 'cpu':
@@ -86,13 +90,14 @@ def run(
         ori_shape = img.shape  # (3,3449,5903)
         ori_img = np.ascontiguousarray(img[::-1].transpose(1, 2, 0))  # HWC BRG
         t1 = time_sync()
-        _img_list, XY_sequence = crop_img(img.transpose(1, 2, 0))  #rgb
+        _img_list, XY_sequence = crop_img(img.transpose(1, 2, 0), gap=160)  #rgb
         __img_list = {k: torch.from_numpy(np.ascontiguousarray(img)).to(device) for (k, img) in _img_list.items()}
         mask_img_list = {k: None for k, img in _img_list.items()}
         img_list = {}
         over_all_label = []
         over_all_xyxy = []
         over_all_c = []
+        over_all_to_nms = []
         for k, img in __img_list.items():
             img = img.half() if half else img.float()  # uint8 to fp16/32
             img = img / 255.0  # 0 - 255 to 0.0 - 1.0
@@ -120,8 +125,8 @@ def run(
                 p, s, im0, frame = path, '', img[0].to('cpu').numpy().transpose(
                     (1, 2, 0)).copy(), getattr(dataset, 'frame', 0)  #im0 rgb
                 p = Path(p)  # to Path
-                save_path = str(save_dir / 'imgs' / p.name.replace('tif', 'jpg'))  # img.jpg
-                save_mask_path = str(save_dir / 'masks' / p.name.replace('tif', 'jpg'))
+                save_path = str(save_dir / 'imgs' / p.name.replace('tif', 'png'))  # img.jpg
+                save_mask_path = str(save_dir / 'masks' / p.name.replace('tif', 'png'))
                 txt_path = str(save_dir / 'labels' / p.stem) + ('' if dataset.mode == 'image' else f'_{frame}'
                                                                 )  # img.txt
                 s += '%gx%g ' % img.shape[2:]  # print string
@@ -156,6 +161,11 @@ def run(
                             over_all_c.append(c)
                             over_all_xyxy.append(_over_all_xyxy)
                             over_all_label.append(label)
+                            over_all_to_nms.append(
+                                np.array([
+                                    *[int(x.cpu().numpy().astype(np.int)) for x in _over_all_xyxy], c,
+                                    float(conf.cpu().numpy())
+                                ]))
 
             img_list[k] = annotator.result().transpose((2, 0, 1))  #rgb
             mask = mask[0, ...].sigmoid()
@@ -171,11 +181,18 @@ def run(
         print(f'{ori_shape[1:]}Done. ({t3 - t2:.3f}s)')
         # Stream results
         ori_img_annotator = Annotator(ori_img, line_width=line_thickness, example=str(names))
-        # pred = non_max_suppression(pred, conf_thres, iou_thres, classes, agnostic_nms, max_det=max_det)
-        for index in range(len(over_all_xyxy)):  # 获取所有标注 绘制
-            c = over_all_c[index]
-            ori_img_annotator.box_label(over_all_xyxy[index], over_all_label[index], color=colors(c, True))
-        # im0 = cat_img(ori_shape, img_list, XY_sequence)  #绘制好的图片直接拼接
+        nmsed_boxes = nms_for_self(over_all_to_nms, iou_thres=0.5)
+        if nmsed_boxes is not None:
+            for nmsed_box in nmsed_boxes:
+                c = int(nmsed_box[5])
+                conf = nmsed_box[4]
+                label = None if hide_labels else (names[c] if hide_conf else f'{names[c]} {conf:.2f}')
+                ori_img_annotator.box_label(nmsed_box[0:4], label, color=colors(c, True))
+            write_json.write_info(nmsed_boxes, Path(p).name)
+        # for index in range(len(over_all_xyxy)):  # 获取所有标注 绘制
+        #     c = over_all_c[index]
+        #     ori_img_annotator.box_label(over_all_xyxy[index], over_all_label[index], color=colors(c, True))
+        # im0 = cat_img(ori_shape, img_list, XY_sequence)  #绘制好的图片直接拼
         im0 = ori_img_annotator.result()  # 获取所有标注 绘制的图片
         msk0 = cat_img(ori_shape, mask_img_list, XY_sequence, mask=True)
         if view_img:
@@ -207,6 +224,7 @@ def run(
     if save_txt or save_img:
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
         print(f"Results saved to {colorstr('bold', save_dir)}{s}")
+    write_json.write_json_file(save_dir)  # for whu save json
 
 
 def parse_opt():
@@ -216,12 +234,14 @@ def parse_opt():
                         type=str,
                         default=ROOT / 'test_weights' / 'last-127.pt',
                         help='model path(s)')
-    parser.add_argument('--source',
-                        type=str,
-                        default='/mnt/users/datasets/chusai_crop/test/images/',
-                        help='file/dir/URL/glob, 0 for webcam')
+    parser.add_argument(
+        '--source',
+        type=str,
+        # default='/mnt/users/datasets/chusai_crop/test/images/',
+        default='/home/xcy/dataset/chusai_release/test/images/',
+        help='file/dir/URL/glob, 0 for webcam')
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')
-    parser.add_argument('--conf-thres', type=float, default=0.5, help='confidence threshold')
+    parser.add_argument('--conf-thres', type=float, default=0.4, help='confidence threshold')
     parser.add_argument('--iou-thres', type=float, default=0.45, help='NMS IoU threshold')
     parser.add_argument('--max-det', type=int, default=1000, help='maximum detections per image')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
@@ -243,6 +263,7 @@ def parse_opt():
     parser.add_argument('--hide-conf', default=False, action='store_true', help='hide confidences')
     parser.add_argument('--half', default=True, action='store_true', help='use FP16 half-precision inference')
     parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
+    parser.add_argument('--json_path', default='/home/xcy/dataset/chusai_release/test/test_write.json')
     opt = parser.parse_args()
     opt.imgsz *= 2 if len(opt.imgsz) == 1 else 1  # expand
     return opt
