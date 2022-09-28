@@ -337,7 +337,7 @@ def parse_opt():
     parser.add_argument('--weights',
                         nargs='+',
                         type=str,
-                        default=ROOT / 'test_weights' / 'last-22.pt',
+                        default=ROOT / 'test_weights' / 'last-127.pt',
                         help='model.pt path(s)')
     parser.add_argument('--batch-size', type=int, default=4, help='batch size')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='inference size (pixels)')
@@ -371,5 +371,5 @@ def main(opt, val_loader):
 
 if __name__ == "__main__":
     opt = parse_opt()
-    val_loader = creat_val_loader('/home/xcy/dataset/chusai_crop', batch_size=opt.batch_size, split_num=0.9)
+    val_loader = creat_val_loader('/mnt/users/datasets/chusai_crop/', batch_size=opt.batch_size, split_num=0.9)
     main(opt, val_loader)

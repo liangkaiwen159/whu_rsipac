@@ -214,7 +214,7 @@ def parse_opt():
     parser.add_argument('--weights',
                         nargs='+',
                         type=str,
-                        default=ROOT / 'test_weights' / 'last-14.pt',
+                        default=ROOT / 'test_weights' / 'last-127.pt',
                         help='model path(s)')
     parser.add_argument('--source',
                         type=str,
