@@ -371,5 +371,5 @@ def main(opt, val_loader):
 
 if __name__ == "__main__":
     opt = parse_opt()
-    val_loader = creat_val_loader('/home/xcy/dataset/chusai_crop', batch_size=opt.batch_size, split_num=0.9)
+    val_loader = creat_val_loader('/mnt/users/datasets/chusai_crop/', batch_size=opt.batch_size, split_num=0.9)
     main(opt, val_loader)
