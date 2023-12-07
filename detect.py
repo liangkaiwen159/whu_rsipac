@@ -181,7 +181,7 @@ def run(
         print(f'{ori_shape[1:]}Done. ({t3 - t2:.3f}s)')
         # Stream results
         ori_img_annotator = Annotator(ori_img, line_width=line_thickness, example=str(names))
-        nmsed_boxes = nms_for_self(over_all_to_nms, iou_thres=0.5)
+        nmsed_boxes = nms_for_self(over_all_to_nms, iou_thres=iou_thres)
         if nmsed_boxes is not None:
             for nmsed_box in nmsed_boxes:
                 c = int(nmsed_box[5])
@@ -232,7 +232,7 @@ def parse_opt():
     parser.add_argument('--weights',
                         nargs='+',
                         type=str,
-                        default=ROOT / 'test_weights' / 'last-127.pt',
+                        default=ROOT / 'test_weights' / 'best-148.pt',
                         help='model path(s)')
     parser.add_argument(
         '--source',
@@ -241,8 +241,8 @@ def parse_opt():
         default='/home/xcy/dataset/chusai_release/test/images/',
         help='file/dir/URL/glob, 0 for webcam')
     parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')
-    parser.add_argument('--conf-thres', type=float, default=0.4, help='confidence threshold')
-    parser.add_argument('--iou-thres', type=float, default=0.45, help='NMS IoU threshold')
+    parser.add_argument('--conf-thres', type=float, default=0.01, help='confidence threshold')
+    parser.add_argument('--iou-thres', type=float, default=0.5, help='NMS IoU threshold')
     parser.add_argument('--max-det', type=int, default=1000, help='maximum detections per image')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--view-img', action='store_true', help='show results')

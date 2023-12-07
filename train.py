@@ -42,7 +42,8 @@ val_loader = []
 
 def parse_opt(known=False):
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', type=str, default=ROOT / 'last.pt', help='initial weights path')
+    # parser.add_argument('--weights', type=str, default=ROOT / 'last.pt', help='initial weights path')
+    parser.add_argument('--weights', type=str, default='', help='initial weights path')
     parser.add_argument('--cfg', type=str, default='models/yolov5l.yaml', help='model.yaml path')
     parser.add_argument('--data', type=str, default=ROOT / 'data/whu_rsipac.yaml', help='dataset.yaml path')
     parser.add_argument('--hyp', type=str, default=ROOT / 'data/hyps/hyp.yaml', help='hyperparameters path')

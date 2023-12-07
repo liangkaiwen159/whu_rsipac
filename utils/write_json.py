@@ -33,7 +33,7 @@ class Write_json():
         print(len(self.output_json))
 
     def write_json_file(self, save_path):
-        save_file_path = os.path.join(save_path, 'whu_output.json')
+        save_file_path = os.path.join(save_path, 'test.bbox.json')
         json.dump(self.output_json, open(save_file_path, 'w'))
 
 
